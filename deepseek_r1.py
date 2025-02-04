@@ -1,6 +1,8 @@
 import sys
 import pyttsx3
 from ollama import chat
+import random
+import re
 
 # Initialize TTS engine
 engine = pyttsx3.init()
@@ -14,18 +16,24 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-def get_answer(question):
-    """Function to get an answer to a question from the model."""
+def get_answer_and_question(question):
+    """Function to get an answer and follow-up question from the model."""
+    # Stream the chat with a system prompt to generate both an answer and a follow-up question
     stream = chat(
         model='deepseek-r1:14b',
-        messages=[{'role': 'user', 'content': question}],
+        messages=[
+            {'role': 'user', 'content': question},
+            {'role': 'system', 'content': 'Answer the question and then ask a relevant follow-up question based on your answer. Continue the conversation naturally.'}
+        ],
         stream=True,
     )
     
     reasoning_content = ""
     content = ""
+    next_question = ""
     in_thinking = False
 
+    # Iterate through the chunks from the stream and assemble the response
     for chunk in stream:
         if chunk and 'message' in chunk and chunk['message'].content:
             # Get the content from the chunk
@@ -47,19 +55,35 @@ def get_answer(question):
                     content += chunk_content
     
     print("\n\nReasoning:", reasoning_content)
-    print("\nFinal Answer:", content)
-    
-    return content.strip()
+    print("\nFinal Answer & Next Question:", content)
+
+    # Check if there's an answer and a follow-up question
+    if content.strip():
+        # Assume that the answer and question are separated by a newline (or similar)
+        # The first part of the content should be the answer, the second part the question.
+        # If the model outputs the answer and question in one response, try splitting on "\n" or any delimiter.
+        split_content = content.split("\n", 1)
+        answer = split_content[0].strip() if len(split_content) > 0 else ""
+        next_question = split_content[1].strip() if len(split_content) > 1 else ""
+    else:
+        answer = ""
+        next_question = "Can you tell me more about that?"
+
+    # If the answer is empty, fallback to a default response
+    if not answer:
+        answer = "Sorry, I didn't catch that. Could you clarify?"
+
+    return answer, next_question
 
 def infinite_conversation():
     """Function to keep the conversation going infinitely."""
-    question = "Let us start a random conversation"  # Initial question
-    
+    question = "Let's have a random conversation! What would you like to discuss?"  # Initial question
+
     while True:
         print(f"User: {question}")
         
-        # Get the answer from the model
-        answer = get_answer(question)
+        # Get the answer and follow-up question from the model
+        answer, next_question = get_answer_and_question(question)
         
         # Output the answer
         print(f"Answer: {answer}")
@@ -67,9 +91,12 @@ def infinite_conversation():
         # Speak the answer
         speak(answer)
         
-        # Create the next question based on the answer
-        question = f"Tell me more about {answer[:200]}..."  # Example: Use first 20 characters of the answer
+        # Output and speak the next follow-up question
+        print(f"Next Question: {next_question}")
+        speak(next_question)
+        
+        # The next question is now the follow-up question from the system
+        question = next_question
 
 # Start the conversation
 infinite_conversation()
-
